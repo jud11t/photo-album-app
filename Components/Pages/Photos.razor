@@ -10,9 +10,9 @@
 @using PhotoAlbumApp.Data
 
 @inject PhotoService PhotoService
+@inject BlobService BlobService
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject IWebHostEnvironment Environment
 
 <h3>Photo Gallery</h3>
 
@@ -275,22 +275,17 @@
         var user = await UserManager.GetUserAsync(authState.User);
         if (user == null) return;
 
-        var uploadsFolder = Path.Combine(Environment.WebRootPath, "uploads");
-        if (!Directory.Exists(uploadsFolder))
-            Directory.CreateDirectory(uploadsFolder);
-
         var uniqueFileName = Guid.NewGuid() + Path.GetExtension(uploadedFile.Name);
-        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
-        using var stream = new FileStream(filePath, FileMode.Create);
-        await uploadedFile.OpenReadStream(10 * 1024 * 1024)
-                          .CopyToAsync(stream);
+        using var stream = uploadedFile.OpenReadStream(10 * 1024 * 1024);
+
+        var imageUrl = await BlobService.UploadAsync(stream, uniqueFileName);
 
         await PhotoService.AddPhoto(new Photo
         {
             Name = photoName,
             UploadDate = DateTime.Now,
-            FilePath = "/uploads/" + uniqueFileName,
+            FilePath = imageUrl,
             UserId = user.Id
         });
 
@@ -302,9 +297,8 @@
     {
         foreach (var photo in selectedPhotos)
         {
-            var fullPath = Path.Combine(Environment.WebRootPath, photo.FilePath.TrimStart('/'));
-            if (File.Exists(fullPath))
-                File.Delete(fullPath);
+            var fileName = Path.GetFileName(photo.FilePath);
+            await BlobService.DeleteAsync(fileName);
 
             await PhotoService.DeletePhoto(photo.Id);
         }
