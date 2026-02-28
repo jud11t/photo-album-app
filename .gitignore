@@ -1,0 +1,20 @@
+# Build
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Upload folder (local files)
+wwwroot/uploads/
+
+# OS
+Thumbs.db
+.DS_Store

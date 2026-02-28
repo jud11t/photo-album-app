@@ -1,0 +1,315 @@
+﻿@page "/photos"
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using PhotoAlbumApp.Models
+@using PhotoAlbumApp.Services
+@using PhotoAlbumApp.Data
+
+@inject PhotoService PhotoService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IWebHostEnvironment Environment
+
+<h3>Photo Gallery</h3>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="mb-3">
+            <button type="button"
+                    class="btn btn-primary me-2"
+                    @onclick="ShowUploadModal">
+                Upload
+            </button>
+
+            <button type="button"
+                    class="btn btn-danger"
+                    disabled="@(!selectedPhotos.Any())"
+                    @onclick="DeleteSelected">
+                Delete
+            </button>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <AuthorizeView>
+                <Authorized>
+                    <th></th>
+                </Authorized>
+            </AuthorizeView>
+
+            <th @onclick='() => SortBy("name")' style="cursor:pointer">
+                Name @(sortBy == "name" ? (ascending ? "▲" : "▼") : "")
+            </th>
+
+            <th @onclick='() => SortBy("date")' style="cursor:pointer">
+                Date @(sortBy == "date" ? (ascending ? "▲" : "▼") : "")
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var photo in photos)
+        {
+            <tr @key="photo.Id" @ondblclick="() => OpenPreview(photo)">
+                <AuthorizeView>
+                    <Authorized>
+                        <td>
+                            <input type="checkbox"
+                                   checked="@selectedPhotos.Contains(photo)"
+                                   @onchange="(e) => ToggleSelection(photo, e.Value)" />
+                        </td>
+                    </Authorized>
+                </AuthorizeView>
+
+                <td>@photo.Name</td>
+                <td>@photo.UploadDate.ToString("yyyy-MM-dd HH:mm")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (CurrentPreview != null)
+{
+    <div class="modal-backdrop">
+        <div class="preview-modal">
+
+            <button type="button"
+                    class="close-btn"
+                    @onclick="ClosePreview">
+                ✕
+            </button>
+
+            <div class="preview-navigation">
+
+                <button type="button"
+                        class="nav-btn"
+                        @onclick="PreviousPhoto"
+                        disabled="@(previewIndex == 0)">
+                    ◀
+                </button>
+
+                <img src="@CurrentPreview.FilePath" />
+
+                <button type="button"
+                        class="nav-btn"
+                        @onclick="NextPhoto"
+                        disabled="@(previewIndex == photos.Count - 1)">
+                    ▶
+                </button>
+
+            </div>
+
+            <div class="mt-2 text-center">
+                <strong>@CurrentPreview.Name</strong>
+            </div>
+
+        </div>
+    </div>
+}
+
+@if (showUploadModal)
+{
+    <div class="modal-backdrop">
+        <div class="modal-box">
+            <h4>Upload Photo</h4>
+
+            <InputFile OnChange="HandleUpload" />
+
+            <input @bind="photoName"
+                   maxlength="40"
+                   class="form-control mt-2"
+                   placeholder="Photo name (max 40 characters)" />
+
+            @if (!string.IsNullOrEmpty(uploadError))
+            {
+                <div class="text-danger mt-2">
+                    @uploadError
+                </div>
+            }
+
+            <div class="mt-3">
+                <button type="button"
+                        class="btn btn-success me-2"
+                        @onclick="SavePhoto">
+                    Save
+                </button>
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        @onclick="CloseUploadModal">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private List<Photo> photos = new();
+    private List<Photo> selectedPhotos = new();
+
+    private int previewIndex = -1;
+
+    private IBrowserFile? uploadedFile;
+    private string photoName = string.Empty;
+    private string? uploadError;
+
+    private string sortBy = "date";
+    private bool ascending = true;
+
+    private bool showUploadModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPhotos();
+    }
+
+    private async Task LoadPhotos()
+    {
+        photos = await PhotoService.GetAllPhotos(sortBy, ascending);
+    }
+
+    private async Task SortBy(string column)
+    {
+        if (sortBy == column)
+            ascending = !ascending;
+        else
+        {
+            sortBy = column;
+            ascending = true;
+        }
+
+        await LoadPhotos();
+    }
+
+    private void ToggleSelection(Photo photo, object? value)
+    {
+        bool isChecked = (bool)value!;
+        if (isChecked)
+        {
+            if (!selectedPhotos.Contains(photo))
+                selectedPhotos.Add(photo);
+        }
+        else
+        {
+            selectedPhotos.Remove(photo);
+        }
+    }
+
+    private void OpenPreview(Photo photo)
+    {
+        previewIndex = photos.IndexOf(photo);
+    }
+
+    private Photo? CurrentPreview =>
+        previewIndex >= 0 && previewIndex < photos.Count
+            ? photos[previewIndex]
+            : null;
+
+    private void NextPhoto()
+    {
+        if (previewIndex < photos.Count - 1)
+            previewIndex++;
+    }
+
+    private void PreviousPhoto()
+    {
+        if (previewIndex > 0)
+            previewIndex--;
+    }
+
+    private void ClosePreview()
+    {
+        previewIndex = -1;
+    }
+
+    private void ShowUploadModal()
+    {
+        uploadError = null;
+        showUploadModal = true;
+    }
+
+    private void CloseUploadModal()
+    {
+        showUploadModal = false;
+        uploadedFile = null;
+        photoName = string.Empty;
+        uploadError = null;
+    }
+
+    private void HandleUpload(InputFileChangeEventArgs e)
+    {
+        uploadedFile = e.File;
+    }
+
+    private async Task SavePhoto()
+    {
+        uploadError = null;
+
+        if (uploadedFile == null)
+        {
+            uploadError = "Please select a photo file.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(photoName))
+        {
+            uploadError = "Photo name is required.";
+            return;
+        }
+
+        if (photoName.Length > 40)
+        {
+            uploadError = "Photo name cannot exceed 40 characters.";
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user == null) return;
+
+        var uploadsFolder = Path.Combine(Environment.WebRootPath, "uploads");
+        if (!Directory.Exists(uploadsFolder))
+            Directory.CreateDirectory(uploadsFolder);
+
+        var uniqueFileName = Guid.NewGuid() + Path.GetExtension(uploadedFile.Name);
+        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+        using var stream = new FileStream(filePath, FileMode.Create);
+        await uploadedFile.OpenReadStream(10 * 1024 * 1024)
+                          .CopyToAsync(stream);
+
+        await PhotoService.AddPhoto(new Photo
+        {
+            Name = photoName,
+            UploadDate = DateTime.Now,
+            FilePath = "/uploads/" + uniqueFileName,
+            UserId = user.Id
+        });
+
+        CloseUploadModal();
+        await LoadPhotos();
+    }
+
+    private async Task DeleteSelected()
+    {
+        foreach (var photo in selectedPhotos)
+        {
+            var fullPath = Path.Combine(Environment.WebRootPath, photo.FilePath.TrimStart('/'));
+            if (File.Exists(fullPath))
+                File.Delete(fullPath);
+
+            await PhotoService.DeletePhoto(photo.Id);
+        }
+
+        selectedPhotos.Clear();
+        await LoadPhotos();
+    }
+}
